@@ -50,4 +50,4 @@ This project is a complete toolset for scanning 35mm film, processing images, an
 - `config_rois.json` & `tracking_refined.json`: Configuration data files.
 
 ## License
-[Specify License Here]
+This project is proprietary and confidential. All rights are reserved. You may not copy, distribute, modify, or use this software without explicit permission from the author.
