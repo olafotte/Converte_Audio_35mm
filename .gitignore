@@ -23,4 +23,18 @@ Thumbs.db
 # Project specific directories (data / backups)
 backup/
 14042026/
+14042026_color/
 visualizacao/
+
+
+*.wav
+*.mp3
+*.mp4
+*.mov
+*.png
+*.jpg
+*.jpeg
+
+colorization_release_v2.caffemodel
+colorization_deploy_v2.prototxt
+pts_in_hull.npy

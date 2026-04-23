@@ -16,7 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 from setup_rois import criar_config_rois
 from tracking import criar_tracking_geometrico
 from detect_transition import detectar_saltos_com_grafico
-from analizador_de_frequencias import analisar_ruido    
+from analizador_de_frequencias import analisar_ruido
+from converte_bw_to_color import load_colorization_model, colorize_image
 
 
 
@@ -90,9 +91,10 @@ def fundir_audio_fase(audio_acumulado, novo_chunk, search_range=150):
 
 # --- FUNÇÕES AUXILIARES ---
 
-def preparar_imagem(caminho, angulo):
+def preparar_imagem(caminho, angulo,espelhar=True):
     with Image.open(caminho) as img:
-        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+        if espelhar:
+            img = img.transpose(Image.FLIP_LEFT_RIGHT)
         img = img.rotate(angulo, resample=Image.BICUBIC, expand=True)
         return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
@@ -126,8 +128,12 @@ def restaurar_audio_final(input_wav, output_wav):
 
 # --- EXECUÇÃO ---
 
-def criar_filme_com_audio(JSON_ROIS="config_rois.json", JSON_REFINADO="tracking_refined.json", PASTA_IMAGENS=Path("14042026"), FFMPEG_PATH=r"C:\ProgramData\ffmpeg-8.1-essentials_build\bin\ffmpeg.exe", FPS=24, VISUALIZAR_DEBUG=False,LIMITE_TESTE_SEGUNDOS=0,SCALE_FACTOR=0.25):
+def criar_filme_com_audio(ANGULO=-90, ESPELHAR=True, SCALE_FACTOR=0.25, JSON_ROIS="config_rois.json", JSON_REFINADO="tracking_refined.json", PASTA_IMAGENS=Path("14042026"), FFMPEG_PATH=r"C:\ProgramData\ffmpeg-8.1-essentials_build\bin\ffmpeg.exe", FPS=24, VISUALIZAR_DEBUG=False,LIMITE_TESTE_SEGUNDOS=0,COLOR=False):
     print("\n" + "="*60 + "\n      SCANNER 35MM V4 - PHASE MATCHING EDITION\n" + "="*60)
+    
+    if COLOR:
+        print("Carregando modelo de colorização...")
+        net_color = load_colorization_model()
     
     arquivos = sorted([PASTA_IMAGENS / f for f in os.listdir(PASTA_IMAGENS) if f.lower().endswith(('.jpg', '.png'))])
 
@@ -159,7 +165,7 @@ def criar_filme_com_audio(JSON_ROIS="config_rois.json", JSON_REFINADO="tracking_
     pipe = subprocess.Popen(cmd_ffmpeg, stdin=subprocess.PIPE)
 
     def worker_frame(f_path):
-        img_h = preparar_imagem(f_path, -90)
+        img_h = preparar_imagem(f_path, ANGULO, ESPELHAR)
         img_u = img_h[yg_f:yg_f+hg_f, xg_f:xg_f+wg_f]
         t = mapa_refinado[f_path.name]
         
@@ -182,26 +188,31 @@ def criar_filme_com_audio(JSON_ROIS="config_rois.json", JSON_REFINADO="tracking_
         # Se você quiser que o box apareça no vídeo final, 
         # o desenho deve ser feito antes desta linha de recorte:
         frame_final = img_stab[yc_f:yc_f+hc_f, xc_f:xc_f+wc_f]
+        
+        if COLOR:
+            # Coloriza o frame recortado
+            frame_final = colorize_image(frame_final, net_color)
 
         return frame_final.tobytes(), audio_chunk, img_stab # Retornamos img_stab para o preview
 
     audio_list = []
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        # Note que agora o worker retorna 3 valores
-        for f_bytes, a_chunk, img_debug in tqdm(executor.map(worker_frame, arquivos), total=len(arquivos), desc="Processando"):
-            if pipe: pipe.stdin.write(f_bytes)
-            audio_list.append(a_chunk)
-            
-            # Mostra a imagem na tela se o debug estiver ativo
-            if VISUALIZAR_DEBUG:
-                # Redimensiona apenas para o preview não ocupar a tela toda
-                preview_img = cv2.resize(img_debug, (0,0), fx=0.4, fy=0.4)
-                cv2.imshow("Preview Tracking & Audio ROI", preview_img)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-                        
-        cv2.destroyAllWindows()
+    # O processamento multithread causa conflito com a rede neural do OpenCV no forward()
+    # Executando de forma sequencial
+    for f_path in tqdm(arquivos, total=len(arquivos), desc="Processando"):
+        f_bytes, a_chunk, img_debug = worker_frame(f_path)
+        if pipe: pipe.stdin.write(f_bytes)
+        audio_list.append(a_chunk)
+        
+        # Mostra a imagem na tela se o debug estiver ativo
+        if VISUALIZAR_DEBUG:
+            # Redimensiona apenas para o preview não ocupar a tela toda
+            preview_img = cv2.resize(img_debug, (0,0), fx=0.4, fy=0.4)
+            cv2.imshow("Preview Tracking & Audio ROI", preview_img)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+                    
+    cv2.destroyAllWindows()
 
 
     if pipe:
@@ -230,13 +241,13 @@ if __name__ == "__main__":
     JSON_OUTPUT="config_rois.json"
     JSON_REFINADO="tracking_refined.json" 
     PASTA_IMAGENS=Path("14042026") # Ajuste para o nome da pasta onde estão suas imagens
-    LIMITE_TESTE_SEGUNDOS = 0 
+    LIMITE_TESTE_SEGUNDOS = 5 
     FFMPEG_PATH = r"C:\ProgramData\ffmpeg-8.1-essentials_build\bin\ffmpeg.exe" # Ajuste para o caminho do seu ffmpeg.exe
     FPS = 24 # Taxa de quadros do vídeo final (ajuste conforme necessário)
     VISUALIZAR_DEBUG=False # Ative para ver as ROIs desenhadas e o preview durante o processamento (pode deixar mais lento)
-    
-    criar_config_rois(ANGULO, ESPELHAR, SCALE_FACTOR, JSON_OUTPUT, PASTA_IMAGENS)  # Garante que o JSON de ROIs exista antes de rodar o main
-    criar_tracking_geometrico(ANGULO, ESPELHAR, SCALE_FACTOR, JSON_REFINADO, PASTA_IMAGENS) # Garante que o JSON de tracking refinado exista antes de rodar o main
-    criar_filme_com_audio(JSON_OUTPUT, JSON_REFINADO, PASTA_IMAGENS, FFMPEG_PATH, FPS, VISUALIZAR_DEBUG,LIMITE_TESTE_SEGUNDOS,SCALE_FACTOR) # Roda o processo completo de criação do filme com áudio
+    COLOR = False
+    #criar_config_rois(ANGULO, ESPELHAR, SCALE_FACTOR, JSON_OUTPUT, PASTA_IMAGENS)  # Garante que o JSON de ROIs exista antes de rodar o main
+    #criar_tracking_geometrico(ANGULO, ESPELHAR, SCALE_FACTOR, JSON_REFINADO, PASTA_IMAGENS) # Garante que o JSON de tracking refinado exista antes de rodar o main
+    criar_filme_com_audio(ANGULO, ESPELHAR, SCALE_FACTOR, JSON_OUTPUT, JSON_REFINADO, PASTA_IMAGENS, FFMPEG_PATH, FPS, VISUALIZAR_DEBUG,LIMITE_TESTE_SEGUNDOS,COLOR) # Roda o processo completo de criação do filme com áudio
     #detectar_saltos_com_grafico() # Roda a análise de transições para verificar estabilidade do vídeo
-    analisar_ruido("audio_clean.wav") # Roda a análise de frequência para verificar o ruído do áudio final
+    #analisar_ruido("audio_clean.wav") # Roda a análise de frequência para verificar o ruído do áudio final

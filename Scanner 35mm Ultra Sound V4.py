@@ -28,6 +28,7 @@ class ScannerInterface(ctk.CTk):
         self.espelhar = ctk.BooleanVar(value=True)
         self.scale_factor = ctk.DoubleVar(value=0.25)
         self.limite_teste = ctk.IntVar(value=0) # 0 significa filme completo
+        self.color = ctk.BooleanVar(value=False)
 
         self.setup_ui()
 
@@ -51,19 +52,20 @@ class ScannerInterface(ctk.CTk):
         ctk.CTkLabel(frame_config, text="Ângulo:").grid(row=0, column=0, padx=10, pady=5)
         ctk.CTkEntry(frame_config, textvariable=self.angulo, width=60).grid(row=0, column=1)
 
-        ctk.CTkLabel(frame_config, text="Scale Factor:").grid(row=0, column=2, padx=10, pady=5)
-        ctk.CTkEntry(frame_config, textvariable=self.scale_factor).grid(row=0, column=3)
-
-        ctk.CTkCheckBox(frame_config, text="Espelhar Imagem", variable=self.espelhar).grid(row=0, column=4, padx=20)
+        ctk.CTkLabel(frame_config, text="Scale Factor:").grid(row=0, column=2, padx=5, pady=5)
+        ctk.CTkEntry(frame_config, textvariable=self.scale_factor, width=60).grid(row=0, column=3)        
 
         ctk.CTkLabel(frame_config, text="FPS:").grid(row=2, column=0, padx=10, pady=5)
         ctk.CTkEntry(frame_config, textvariable=self.fps, width=60).grid(row=2, column=1)
         ctk.CTkLabel(frame_config, text="Limite Teste (s):").grid(row=2, column=2, padx=10)
         ctk.CTkEntry(frame_config, textvariable=self.limite_teste, width=60).grid(row=2, column=3)
 
+        ctk.CTkCheckBox(frame_config, text="Espelhar Imagem", variable=self.espelhar).grid(row=3, column=1, padx=20)
+        ctk.CTkCheckBox(frame_config, text="Colorir Imagem", variable=self.color).grid(row=3, column=3, padx=20)
+
         # O texto de ajuda (Label pequeno e cinza)
         lbl_ajuda = ctk.CTkLabel(frame_config, text="(0 para completo)", font=("Roboto", 10), text_color="gray")
-        lbl_ajuda.grid(row=2, column=4, padx=5)
+        lbl_ajuda.grid(row=2, column=4, padx=0)
 
         # FFMPEG Path
         frame_ffmpeg = ctk.CTkFrame(self)
@@ -126,6 +128,9 @@ class ScannerInterface(ctk.CTk):
                 self.status_label.configure(text="Status: Renderizando Vídeo...", text_color="orange")
                 p = Path(self.path_imagens.get())
                 criar_filme_com_audio(
+                    ANGULO=self.angulo.get(),
+                    ESPELHAR=self.espelhar.get(),
+                    SCALE_FACTOR=self.scale_factor.get(),
                     JSON_ROIS="config_rois.json",
                     JSON_REFINADO="tracking_refined.json",
                     PASTA_IMAGENS=p,
@@ -133,7 +138,7 @@ class ScannerInterface(ctk.CTk):
                     FPS=int(self.fps.get()),
                     VISUALIZAR_DEBUG=False,
                     LIMITE_TESTE_SEGUNDOS=self.limite_teste.get(),
-                    SCALE_FACTOR=self.scale_factor.get()
+                    COLOR=self.color.get()
                 )
                 self.status_label.configure(text="Status: VÍDEO CONCLUÍDO!", text_color="cyan")
                 messagebox.showinfo("Finalizado", "O filme foi gerado com sucesso!")
